@@ -46,6 +46,7 @@ import {
 
 import { ProductBoxPreview } from './ProductBoxPreview';
 import { PremiumProductBox } from './PremiumProductBox';
+import { ProductCarousel } from './ProductCarousel';
 import { ComparisonTablePreview } from './ComparisonTablePreview';
 import { useHistory } from '../hooks/useHistory';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -966,6 +967,34 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
           >
             <i className="fa-solid fa-wand-magic-sparkles" /> Auto-Deploy All
           </button>
+
+          {/* Insert Carousel */}
+          {Object.keys(productMap).length >= 2 && (
+            <button
+              onClick={() => {
+                // Group all products into a carousel node at the best position
+                const allProducts = Object.values(productMap);
+                const carouselNode: EditorNode = {
+                  id: `carousel-${Date.now()}`,
+                  type: 'PRODUCT' as const,
+                  productId: `__carousel__${allProducts.map(p => p.id).join(',')}`,
+                };
+                const next = [...editorNodes];
+                // Find first product node position or insert after first HTML block
+                const firstProdIdx = next.findIndex(n => n.type === 'PRODUCT');
+                const insertAt = firstProdIdx >= 0 ? firstProdIdx : Math.min(2, next.length);
+                // Remove existing product nodes
+                const cleaned = next.filter(n => n.type !== 'PRODUCT');
+                cleaned.splice(insertAt, 0, carouselNode);
+                setEditorNodes(cleaned);
+                toast('Carousel created with all products!');
+              }}
+              className="h-[46px] px-6 bg-violet-600 text-white rounded-full text-[10px] font-black uppercase tracking-[3px] shadow-2xl hover:bg-violet-500 hover:scale-105 transition-all flex items-center gap-2"
+              title="Group all products into a swipeable carousel"
+            >
+              <i className="fa-solid fa-layer-group" /> Carousel
+            </button>
+          )}
         </div>
 
         {/* ---- CANVAS ---- */}
@@ -1066,6 +1095,16 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
         );
       }}
     />
+  ) : node.productId?.startsWith('__carousel__') ? (
+    /* ── Carousel Mode ── */
+    <div className="relative">
+      <ProductCarousel
+        products={node.productId.replace('__carousel__', '').split(',').map(id => productMap[id]).filter(Boolean)}
+        affiliateTag={config.amazonTag}
+        mode={productMap[Object.keys(productMap)[0]]?.deploymentMode}
+        variant={config.boxStyle === 'PREMIUM' ? 'production' : 'preview'}
+      />
+    </div>
   ) : node.productId && productMap[node.productId] ? (
     <div className="relative">
       {config.boxStyle === 'PREMIUM' ? (
