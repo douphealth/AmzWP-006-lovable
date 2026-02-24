@@ -2458,6 +2458,9 @@ class SerpApiError extends Error {
   }
 }
 
+const HARDCODED_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ousxeycrhvuwaejhpqgv.supabase.co';
+const HARDCODED_SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91c3hleWNyaHZ1d2FlamhwcWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNDg3NDgsImV4cCI6MjA4NTYyNDc0OH0.T3abJctCxKFrtkbusDGMursbZXP768sWxz3_yIi9lIc';
+
 const callSerpApiProxy = async (params: {
   type: 'search' | 'product';
   query?: string;
@@ -2468,53 +2471,57 @@ const callSerpApiProxy = async (params: {
     throw new SerpApiError('SerpAPI key is required. Add it in Settings.', 0, true);
   }
 
-  // Build direct SerpAPI URL
-  let serpApiUrl: string;
-  if (params.type === 'product' && params.asin) {
-    serpApiUrl = `https://serpapi.com/search.json?engine=amazon_product&asin=${encodeURIComponent(params.asin)}&amazon_domain=amazon.com&api_key=${encodeURIComponent(params.apiKey)}`;
-  } else if (params.type === 'search' && params.query) {
-    serpApiUrl = `https://serpapi.com/search.json?engine=amazon&amazon_domain=amazon.com&k=${encodeURIComponent(params.query)}&api_key=${encodeURIComponent(params.apiKey)}`;
-  } else {
-    throw new SerpApiError('Invalid request - provide query or asin', 400, false);
-  }
+  // ALWAYS use the Supabase Edge Function proxy — never call SerpAPI directly
+  const edgeFunctionUrl = `${HARDCODED_SUPABASE_URL}/functions/v1/serpapi-proxy`;
+  
+  let response: Response;
+  let lastError: Error | null = null;
+  
+  // Retry with exponential backoff (max 3 attempts)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetchWithTimeout(edgeFunctionUrl, 30000, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${HARDCODED_SUPABASE_KEY}`,
+        },
+        body: JSON.stringify(params),
+      });
 
-  // If Supabase is configured, use the edge function proxy
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    const edgeFunctionUrl = `${SUPABASE_URL}/functions/v1/serpapi-proxy`;
-    const response = await fetchWithTimeout(edgeFunctionUrl, 30000, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify(params),
-    });
+      if (response.ok) {
+        return response.json();
+      }
 
-    if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const msg = errorData.error || `SerpAPI proxy error: ${response.status}`;
-      const isFatal = response.status === 401 || response.status === 403;
-      throw new SerpApiError(msg, response.status, isFatal);
+      
+      // Fatal errors — don't retry
+      if (response.status === 401 || response.status === 402 || response.status === 403) {
+        throw new SerpApiError(msg, response.status, true);
+      }
+      
+      // Rate limit — respect Retry-After
+      if (response.status === 429) {
+        const retryAfter = response.headers?.get?.('Retry-After');
+        const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 2000;
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      
+      lastError = new SerpApiError(msg, response.status, false);
+    } catch (e: any) {
+      if (e instanceof SerpApiError && e.isFatal) throw e;
+      lastError = e;
     }
-
-    return response.json();
+    
+    // Exponential backoff
+    if (attempt < 2) {
+      await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+    }
   }
-
-  // Direct call to SerpAPI (works when Supabase is not configured)
-  const response = await fetchWithTimeout(serpApiUrl, 30000, {
-    headers: { 'Accept': 'application/json' },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `SerpAPI returned ${response.status}`;
-    if (response.status === 401) errorMessage = 'Invalid SerpAPI key';
-    else if (response.status === 429) errorMessage = 'SerpAPI rate limit exceeded';
-    else if (response.status === 400) errorMessage = 'Invalid request to SerpAPI';
-    const isFatal = response.status === 401 || response.status === 403;
-    throw new SerpApiError(errorMessage, response.status, isFatal);
-  }
-
-  return response.json();
+  
+  throw lastError || new SerpApiError('SerpAPI proxy failed after retries', 500, false);
 };
 
 const extractPrice = (result: any): string => {
