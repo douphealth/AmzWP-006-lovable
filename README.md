@@ -1,73 +1,123 @@
-# Welcome to your Lovable project
+# AmzWP Automator - Enterprise Edition
 
-## Project info
+> **SOTA Amazon-WordPress Automation Platform**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+An enterprise-grade React application for automated Amazon affiliate content generation and WordPress publishing with AI-powered optimization.
 
-## How can I edit this code?
+## Architecture Overview
 
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           PRESENTATION LAYER                                │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ LandingPage  │ │SitemapScanner│ │  PostEditor  │ │ ConfigPanel  │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STATE MANAGEMENT (Zustand)                          │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │  App Store   │ │  Post Store  │ │ Batch Store  │ │   UI Store   │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SERVICE LAYER (DI Container)                        │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │   AI Service │ │  WP Service  │ │Amazon Service│ │ Cache Service│        │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         INFRASTRUCTURE LAYER                                │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │  Resilient   │ │    Task      │ │   IndexedDB  │ │   Web Worker │        │
+│  │  API Client  │ │    Queue     │ │   Storage    │ │   Pool       │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Edit a file directly in GitHub**
+## Core Features
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### 🚀 Performance
+- **Web Workers** for heavy computation (XML parsing, AI generation)
+- **Virtualized lists** for handling 10,000+ posts
+- **SWR caching** with stale-while-revalidate
+- **Lazy loading** with React Suspense
+- **Code splitting** at route level
 
-**Use GitHub Codespaces**
+### 🛡️ Reliability
+- **Circuit breaker** pattern for API resilience
+- **Exponential backoff** retry logic
+- **Persistent task queue** with IndexedDB
+- **Error boundaries** at component level
+- **Graceful degradation** strategies
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### 🏗️ Architecture
+- **Dependency injection** with InversifyJS
+- **Zustand state management** with Immer
+- **Zod validation** for runtime type safety
+- **Structured logging** with Pino
+- **OpenTelemetry** tracing support
 
-## What technologies are used for this project?
+### 📊 Observability
+- **Real-time metrics** dashboard
+- **Performance monitoring** (Web Vitals)
+- **Error tracking** with context
+- **Audit logging** for all operations
 
-This project is built with:
+## Tech Stack
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+| Category | Technology |
+|----------|------------|
+| Framework | React 19 + TypeScript 5.5 |
+| Build Tool | Vite 6 |
+| State | Zustand + Immer |
+| Validation | Zod |
+| Caching | SWR + IndexedDB |
+| Styling | Tailwind CSS 4 |
+| UI Components | Radix UI + shadcn/ui |
+| Testing | Vitest + Playwright |
+| Logging | Pino |
 
-## How can I deploy this project?
+## Quick Start
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```bash
+# Install dependencies
+npm install
 
-## Can I connect a custom domain to my Lovable project?
+# Run development server
+npm run dev
 
-Yes, you can!
+# Build for production
+npm run build
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+# Run tests
+npm run test
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+# Run e2e tests
+npm run test:e2e
+```
+
+## Environment Variables
+
+```bash
+# Required
+VITE_GEMINI_API_KEY=your_key_here
+
+# Optional
+VITE_LOG_LEVEL=info
+VITE_ENABLE_METRICS=true
+VITE_CACHE_TTL=3600
+```
+
+## Documentation
+
+- [Architecture Decision Records](./docs/adr/)
+- [API Documentation](./docs/api/)
+- [Deployment Guide](./docs/deployment/)
+- [Contributing](./CONTRIBUTING.md)
+
+## License
+
+MIT © 2026 AmzWP Automator
