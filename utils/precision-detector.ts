@@ -887,27 +887,60 @@ async function verifyWithAmazon(
     throw new Error('SerpAPI key is required for product verification. Add it in Settings > Amazon.');
   }
   
+  // === PRE-FILTER: Remove garbage candidates that waste API credits ===
+  const validCandidates = candidates.filter(c => {
+    const q = c.searchQuery?.trim();
+    if (!q || q.length < 3) return false;
+    
+    // Must have at least one detection source that isn't just AI
+    const hasStructuralSource = c.sources.some(s => 
+      s.type === 'asin_link' || s.type === 'affiliate_anchor' || s.type === 'brand_model_regex' || s.type === 'model_number'
+    );
+    
+    // Reject queries that look like article headings/sections (not product names)
+    const headingPatterns = /^(my |part \d|minute|step|hack |the |why |how |what |when |tip |key |core |real |effort|design|heart rate sensor|important|conclusion|faq|review|summary|verdict|final|pros |cons )/i;
+    if (!hasStructuralSource && headingPatterns.test(q)) return false;
+    
+    // Reject queries that are too long (likely sentences, not product names)
+    if (q.length > 80 && !c.asin) return false;
+    
+    // Reject queries with special characters indicating they're not product names
+    if (/[?!:…–—]/.test(q) && !c.asin) return false;
+    
+    // Must contain at least one recognizable brand or be an ASIN-based candidate
+    if (c.asin) return true;
+    if (c.brand && c.brand.length >= 2) return true;
+    
+    // Check if the query looks like a product (brand + product words)
+    const productIndicators = /\b(pro|max|plus|ultra|lite|mini|gen|series|edition|version|model|mk|gt|se|air|pod|bud|watch|band|phone|tablet|speaker|headphone|earbud|charger|cable|case|cover|stand|mount|holder|adapter|hub|dock|keyboard|mouse|monitor|tv|camera|lens|drone|gopro|fitbit|garmin|samsung|apple|sony|bose|jabra|beats|anker|belkin|logitech)\b/i;
+    if (productIndicators.test(q)) return true;
+    
+    // Reject everything else to save API credits
+    return false;
+  });
+
   const products: ProductDetails[] = [];
-  const total = Math.min(candidates.length, 15);
+  // Cap at 8 maximum API calls per scan to conserve credits
+  const total = Math.min(validCandidates.length, 8);
   let fatalError: string | null = null;
   
-  // Process in batches of 3 with delays
+  // Process sequentially with delays to respect rate limits
   for (let i = 0; i < total; i++) {
     if (fatalError) break;
     
-    const candidate = candidates[i];
+    const candidate = validCandidates[i];
     onProgress?.(i + 1, total);
     
     try {
       let productData: Partial<ProductDetails> = {};
       
-      // Try ASIN first if available
+      // Try ASIN first if available (more reliable, saves credit vs search)
       if (candidate.asin) {
         try {
           const result = await fetchProductByASIN(candidate.asin, config.serpApiKey!);
           if (result) productData = result;
         } catch (e: any) {
-          if (e.message?.includes('401') || e.message?.includes('Invalid')) {
+          if (e.message?.includes('401') || e.message?.includes('Invalid') || e.message?.includes('402')) {
             fatalError = e.message;
             break;
           }
@@ -922,7 +955,7 @@ async function verifyWithAmazon(
             config.serpApiKey!
           );
         } catch (e: any) {
-          if (e.message?.includes('401') || e.message?.includes('Invalid')) {
+          if (e.message?.includes('401') || e.message?.includes('Invalid') || e.message?.includes('402')) {
             fatalError = e.message;
             break;
           }
@@ -956,9 +989,9 @@ async function verifyWithAmazon(
       
       products.push(product);
       
-      // Rate limit
+      // Rate limit: 500ms between calls
       if (i < total - 1) {
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 500));
       }
     } catch {
       continue;
@@ -1098,7 +1131,7 @@ export async function detectProductsPrecision(
   allCandidates.sort((a, b) => b.confidence - a.confidence);
   
   // Filter low-confidence candidates
-  const viableCandidates = allCandidates.filter(c => c.confidence >= 35);
+  const viableCandidates = allCandidates.filter(c => c.confidence >= 50);
   
   // === STAGE 7: Amazon verification ===
   onProgress?.('Verifying with Amazon...', 5, 6);
