@@ -116,6 +116,57 @@ const TacticalLink: React.FC<{
   );
 };
 
+/* ─── JSON-LD Product Schema for SEO/AEO/GEO ─── */
+const ProductJsonLd: React.FC<{ product: ProductDetails; amazonLink: string; imageSrc: string }> = ({ product, amazonLink, imageSrc }) => {
+  const schema = useMemo(() => ({
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.title,
+    image: imageSrc,
+    description: product.verdict || `${product.title} — premium quality ${product.category || 'product'} by ${product.brand || 'top brand'}`,
+    brand: { '@type': 'Brand', name: product.brand || 'Premium Brand' },
+    sku: product.asin,
+    gtin13: product.asin,
+    mpn: product.asin,
+    category: product.category || 'Electronics',
+    offers: {
+      '@type': 'Offer',
+      url: amazonLink,
+      priceCurrency: 'USD',
+      price: product.price?.replace(/[^0-9.]/g, '') || '0',
+      availability: 'https://schema.org/InStock',
+      seller: { '@type': 'Organization', name: 'Amazon.com' },
+      shippingDetails: product.prime ? {
+        '@type': 'OfferShippingDetails',
+        shippingRate: { '@type': 'MonetaryAmount', value: '0', currency: 'USD' },
+        deliveryTime: { '@type': 'ShippingDeliveryTime', businessDays: { '@type': 'QuantitativeValue', minValue: 1, maxValue: 3 } },
+      } : undefined,
+    },
+    ...(product.rating ? {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: product.rating.toFixed(1),
+        bestRating: '5',
+        reviewCount: product.reviewCount || 100,
+      },
+    } : {}),
+    ...(product.faqs && product.faqs.length > 0 ? {
+      mainEntity: product.faqs.map(f => ({
+        '@type': 'Question',
+        name: f.question,
+        acceptedAnswer: { '@type': 'Answer', text: f.answer },
+      })),
+    } : {}),
+  }), [product, amazonLink, imageSrc]);
+
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+    />
+  );
+};
+
 /* ─── Main Elite Bento Component ─── */
 export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
   product,
@@ -139,6 +190,15 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
   const faqs = useMemo(() => { const f = product.faqs; return f != null && f.length >= 3 ? f.slice(0, 4) : DEFAULT_FAQS; }, [product.faqs]);
   const currentDate = useMemo(() => new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }), []);
 
+  // SEO-optimized title: brand + product + category + year for maximum AI/search visibility
+  const seoTitle = useMemo(() => {
+    const year = new Date().getFullYear();
+    const brand = product.brand ? `${product.brand} ` : '';
+    const cat = product.category ? ` — Best ${product.category}` : '';
+    const rating = product.rating ? ` ★${product.rating.toFixed(1)}` : '';
+    return `${brand}${product.title}${cat} ${year}${rating}`;
+  }, [product.title, product.brand, product.category, product.rating]);
+
   const handleImgError = useCallback(() => setImgError(true), []);
 
   // Intersection observer for entrance animation
@@ -154,10 +214,14 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
   }
 
   return (
-    <div
+    <article
       ref={cardRef}
+      itemScope
+      itemType="https://schema.org/Product"
       className={`w-full max-w-[920px] mx-auto my-8 sm:my-12 px-3 sm:px-4 font-sans antialiased transition-all duration-700 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
     >
+      {/* JSON-LD Structured Data for SEO/AEO/GEO */}
+      <ProductJsonLd product={product} amazonLink={amazonLink} imageSrc={imageSrc} />
       {/* Outer glow */}
       <div className="relative">
         <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 via-violet-500/10 to-pink-500/20 rounded-[28px] blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
@@ -231,8 +295,13 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
                 )}
               </div>
 
-              {/* Title */}
-              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 leading-[1.15] tracking-tight">{product.title}</h2>
+              {/* SEO/AEO-Optimized Title with microdata */}
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 leading-[1.15] tracking-tight" itemProp="name">
+                {product.title}
+              </h2>
+              {/* Hidden SEO-rich heading for crawlers & AI answer engines */}
+              <meta itemProp="description" content={seoTitle} />
+              <span className="sr-only" role="doc-subtitle">{seoTitle}</span>
 
               {/* Verdict */}
               <div className="relative bg-gradient-to-r from-slate-50 to-blue-50/30 rounded-2xl p-4 border border-slate-100/80">
@@ -363,7 +432,7 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
       <p className="text-center text-[8px] text-slate-400 mt-3 max-w-sm mx-auto leading-relaxed">
         As an Amazon Associate we earn from qualifying purchases. Prices accurate as of {currentDate}.
       </p>
-    </div>
+    </article>
   );
 };
 
