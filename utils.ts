@@ -2436,7 +2436,7 @@ const generateDefaultFaqs = (productTitle: string): FAQItem[] => {
 // ============================================================================
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 
 /**
  * Get raw API key - just return it as-is
