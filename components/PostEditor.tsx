@@ -304,7 +304,9 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
       const state = { editorNodes, productMap, timestamp: Date.now() };
       localStorage.setItem(`${AUTO_SAVE_KEY_PREFIX}${post.id}`, JSON.stringify(state));
       lastSaveRef.current = Date.now();
-    } catch { /* quota exceeded — silently ignore */ }
+    } catch {
+      toast.warning('Auto-save failed — storage quota exceeded. Consider clearing old data.', { duration: 5000 });
+    }
   }, [editorNodes, productMap, post.id]);
 
   useEffect(() => {
@@ -344,9 +346,14 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
     if (text.length < 50 && score < 50) score -= 10;
 
     relevanceCache.current.set(cacheKey, score);
+    // LRU eviction: delete least-recently-inserted entries when over limit
     if (relevanceCache.current.size > 1000) {
-      const keys = Array.from(relevanceCache.current.keys()).slice(0, 500);
-      keys.forEach((k) => relevanceCache.current.delete(k));
+      // Map iterates in insertion order; delete oldest half
+      const iterator = relevanceCache.current.keys();
+      for (let i = 0; i < 500; i++) {
+        const key = iterator.next().value;
+        if (key) relevanceCache.current.delete(key);
+      }
     }
 
     return score;
@@ -728,7 +735,7 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
   const generateFinalHtml = useCallback((): string => {
     return editorNodes
       .map((node) => {
-        if (node.type === 'HTML') return node.content;
+        if (node.type === 'HTML') return sanitizeHtml(node.content || '');
         if (node.type === 'PRODUCT' && node.productId && productMap[node.productId]) {
           return generateProductBoxHtml(
             productMap[node.productId],
@@ -1075,7 +1082,7 @@ export const PostEditor: React.FC<PostEditorProps> = ({ post, config, onBack }) 
       className="prose prose-xl prose-slate max-w-none focus:outline-none focus:ring-2 focus:ring-brand-100 rounded-xl p-2 transition-all"
       contentEditable
       suppressContentEditableWarning
-      onBlur={(e) => updateHtmlNode(node.id, e.currentTarget.innerHTML)}
+      onBlur={(e) => updateHtmlNode(node.id, sanitizeHtml(e.currentTarget.innerHTML))}
       dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.content || '') }}
     />
   ) : node.type === 'COMPARISON' && node.comparisonData ? (
