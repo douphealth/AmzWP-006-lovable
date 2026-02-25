@@ -24,8 +24,15 @@
  */
 
 import React, { useState, useCallback, useRef, useMemo } from 'react';
-import { BlogPost, AppConfig } from '../types';
+import { BlogPost, AppConfig, ProductDetails } from '../types';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import {
+  fetchRawPostContent,
+  analyzeContentAndFindProduct,
+  generateProductBoxHtml,
+  pushToWordPress,
+  splitContentIntoBlocks,
+} from '../utils';
 
 export interface BatchJob {
   id: string;
@@ -79,28 +86,52 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
     const startTime = Date.now();
     
     try {
+      // Stage 1: Fetch content
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing', progress: 10, startTime } : j));
       
-      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+      const { content, resolvedId } = await fetchRawPostContent(config, job.post.id, job.post.url || '');
       
       if (abortRef.current) return { ...job, status: 'skipped' };
+      if (!content || content.length < 50) {
+        return { ...job, status: 'failed', error: 'No content found', endTime: Date.now(), startTime };
+      }
 
+      // Stage 2: AI analysis
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, progress: 30 } : j));
       
-      await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 500));
+      const analysis = await analyzeContentAndFindProduct(job.post.title, content, config);
       
       if (abortRef.current) return { ...job, status: 'skipped' };
 
-      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, progress: 60 } : j));
-      
-      await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 400));
+      const productsFound = analysis.detectedProducts?.length || 0;
 
-      const productsFound = Math.floor(Math.random() * 4);
-      
-      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, progress: 85, productsFound } : j));
+      // Stage 3: Generate HTML with product boxes
+      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, progress: 60, productsFound } : j));
 
-      if (autoPublish && productsFound > 0) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+      if (productsFound > 0 && autoPublish) {
+        // Build final HTML with product boxes inserted
+        const blocks = splitContentIntoBlocks(content);
+        const products = analysis.detectedProducts || [];
+        let finalParts: string[] = [...blocks];
+
+        // Insert product boxes at detected positions (reverse order to preserve indices)
+        const sorted = [...products]
+          .filter(p => typeof p.insertionIndex === 'number' && p.insertionIndex >= 0)
+          .sort((a, b) => (b.insertionIndex ?? 0) - (a.insertionIndex ?? 0));
+
+        for (const product of sorted) {
+          const idx = Math.min(product.insertionIndex ?? finalParts.length, finalParts.length);
+          const boxHtml = generateProductBoxHtml(product, config.amazonTag, product.deploymentMode);
+          finalParts.splice(idx, 0, boxHtml);
+        }
+
+        const finalHtml = finalParts.join('\n\n');
+
+        // Stage 4: Push to WordPress
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, progress: 85 } : j));
+        await pushToWordPress(config, resolvedId, finalHtml);
+      } else {
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, progress: 85 } : j));
       }
 
       return {
@@ -268,14 +299,14 @@ export const BatchProcessor: React.FC<BatchProcessorProps> = ({
         {jobs.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 md:p-6 bg-slate-900/50">
             {[
-              { label: 'Processing', value: stats.processing, color: 'from-blue-500 to-blue-600', bg: 'bg-blue-500/10', icon: 'fa-spinner fa-spin' },
-              { label: 'Completed', value: stats.completed, color: 'from-emerald-500 to-green-600', bg: 'bg-emerald-500/10', icon: 'fa-check' },
-              { label: 'Failed', value: stats.failed, color: 'from-red-500 to-red-600', bg: 'bg-red-500/10', icon: 'fa-times' },
-              { label: 'Queued', value: stats.queued, color: 'from-slate-500 to-slate-600', bg: 'bg-slate-500/10', icon: 'fa-clock' },
-              { label: 'Products', value: stats.productsFound, color: 'from-amber-500 to-orange-600', bg: 'bg-amber-500/10', icon: 'fa-box' },
+              { label: 'Processing', value: stats.processing, gradient: 'from-blue-500 to-blue-600', bg: 'bg-blue-500/10', icon: 'fa-spinner fa-spin' },
+              { label: 'Completed', value: stats.completed, gradient: 'from-emerald-500 to-green-600', bg: 'bg-emerald-500/10', icon: 'fa-check' },
+              { label: 'Failed', value: stats.failed, gradient: 'from-red-500 to-red-600', bg: 'bg-red-500/10', icon: 'fa-times' },
+              { label: 'Queued', value: stats.queued, gradient: 'from-slate-500 to-slate-600', bg: 'bg-slate-500/10', icon: 'fa-clock' },
+              { label: 'Products', value: stats.productsFound, gradient: 'from-amber-500 to-orange-600', bg: 'bg-amber-500/10', icon: 'fa-box' },
             ].map(stat => (
               <div key={stat.label} className={`${stat.bg} rounded-2xl p-4 text-center border border-slate-700/30`}>
-                <div className={`text-2xl md:text-3xl font-black bg-gradient-to-r ${stat.color} bg-clip-text text-transparent`}>
+                <div className={`text-2xl md:text-3xl font-black bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>
                   {stat.value}
                 </div>
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-center gap-1 mt-1">

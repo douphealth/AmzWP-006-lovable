@@ -143,12 +143,84 @@ export const IntelligenceCache = new IntelligenceCacheClass();
  * Secure Storage with Web Crypto API (simplified - sync fallback)
  */
 class SecureStorageClass {
-  private static readonly ENCRYPTION_VERSION = 'v2:';
+  private static readonly ENCRYPTION_VERSION = 'v3:';
+  private static readonly LEGACY_VERSION = 'v2:';
 
-  private deriveKey(): number[] {
-    // Combine multiple application constants into a rotating key buffer.
-    // This is not cryptographic-grade, but provides meaningful obfuscation
-    // of locally-stored API keys beyond plain base64.
+  /**
+   * Derive a CryptoKey from a fixed passphrase using PBKDF2.
+   * In a real production system the passphrase would come from user input.
+   */
+  private async deriveKey(salt: Uint8Array): Promise<CryptoKey> {
+    const passphrase = 'amzwp-secure-2024-xK9#mP2$vL5&nQ8@';
+    const enc = new TextEncoder();
+    const raw = enc.encode(passphrase);
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw', raw.buffer as ArrayBuffer, 'PBKDF2', false, ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: salt.buffer as ArrayBuffer, iterations: 100_000, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  }
+
+  /** Async encrypt using AES-GCM (preferred) */
+  async encrypt(text: string): Promise<string> {
+    if (!text) return '';
+    try {
+      const enc = new TextEncoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await this.deriveKey(salt);
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        enc.encode(text),
+      );
+      // Pack: salt(16) + iv(12) + ciphertext
+      const packed = new Uint8Array(salt.length + iv.length + new Uint8Array(ciphertext).length);
+      packed.set(salt, 0);
+      packed.set(iv, salt.length);
+      packed.set(new Uint8Array(ciphertext), salt.length + iv.length);
+      return SecureStorageClass.ENCRYPTION_VERSION + btoa(String.fromCharCode(...packed));
+    } catch {
+      // Fallback to sync (non-crypto) for environments without subtle
+      return this.encryptSync(text);
+    }
+  }
+
+  /** Async decrypt using AES-GCM */
+  async decrypt(encrypted: string): Promise<string> {
+    if (!encrypted) return '';
+    try {
+      if (encrypted.startsWith(SecureStorageClass.ENCRYPTION_VERSION)) {
+        const payload = encrypted.slice(SecureStorageClass.ENCRYPTION_VERSION.length);
+        const raw = Uint8Array.from(atob(payload), c => c.charCodeAt(0));
+        const salt = raw.slice(0, 16);
+        const iv = raw.slice(16, 28);
+        const ciphertext = raw.slice(28);
+        const key = await this.deriveKey(salt);
+        const plainBuf = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv },
+          key,
+          ciphertext,
+        );
+        return new TextDecoder().decode(plainBuf);
+      }
+      // Fallback: legacy formats
+      return this.decryptSync(encrypted);
+    } catch {
+      return this.decryptSync(encrypted);
+    }
+  }
+
+  /**
+   * Sync fallback (XOR-based obfuscation) for backward compatibility
+   * and environments without Web Crypto.
+   */
+  private legacyDeriveKey(): number[] {
     const seeds = [
       'app-secure-storage-salt-2024',
       'xK9#mP2$vL5&nQ8@',
@@ -166,13 +238,13 @@ class SecureStorageClass {
   encryptSync(text: string): string {
     if (!text) return '';
     try {
-      const key = this.deriveKey();
+      const key = this.legacyDeriveKey();
       const encrypted: number[] = [];
       for (let i = 0; i < text.length; i++) {
         encrypted.push(text.charCodeAt(i) ^ key[i % key.length]);
       }
       const binaryString = String.fromCharCode(...encrypted);
-      return SecureStorageClass.ENCRYPTION_VERSION + btoa(binaryString);
+      return SecureStorageClass.LEGACY_VERSION + btoa(binaryString);
     } catch {
       return text;
     }
@@ -181,11 +253,10 @@ class SecureStorageClass {
   decryptSync(encrypted: string): string {
     if (!encrypted) return '';
     try {
-      // Handle v2 encrypted values
-      if (encrypted.startsWith(SecureStorageClass.ENCRYPTION_VERSION)) {
-        const payload = encrypted.slice(SecureStorageClass.ENCRYPTION_VERSION.length);
+      if (encrypted.startsWith(SecureStorageClass.LEGACY_VERSION)) {
+        const payload = encrypted.slice(SecureStorageClass.LEGACY_VERSION.length);
         const binaryString = atob(payload);
-        const key = this.deriveKey();
+        const key = this.legacyDeriveKey();
         let decrypted = '';
         for (let i = 0; i < binaryString.length; i++) {
           decrypted += String.fromCharCode(binaryString.charCodeAt(i) ^ key[i % key.length]);

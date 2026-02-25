@@ -386,17 +386,17 @@ interface InfoBoxProps {
 }
 
 const InfoBox: React.FC<InfoBoxProps> = ({ type, icon, children }) => {
-  const colorMap = {
-    info: 'blue',
-    warning: 'amber',
-    success: 'green',
-    error: 'red',
+  const colorClasses = {
+    info: { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400' },
+    warning: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400' },
+    success: { bg: 'bg-green-500/10', border: 'border-green-500/30', text: 'text-green-400' },
+    error: { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400' },
   };
-  const color = colorMap[type];
+  const c = colorClasses[type];
 
   return (
-    <div className={`p-4 bg-${color}-500/10 border border-${color}-500/30 rounded-xl`}>
-      <p className={`text-xs text-${color}-400 flex items-start gap-2`}>
+    <div className={`p-4 ${c.bg} border ${c.border} rounded-xl`}>
+      <p className={`text-xs ${c.text} flex items-start gap-2`}>
         <i className={`fa-solid ${icon} mt-0.5`} />
         <span>{children}</span>
       </p>
