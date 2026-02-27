@@ -65,10 +65,13 @@ export const ProductBoxPreview: React.FC<ProductBoxPreviewProps> = ({
   const [imgError, setImgError] = useState(false);
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
 
+  const generatePlaceholderSvg = (text: string) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800"><rect fill="#f1f5f9" width="800" height="800"/><text x="400" y="410" text-anchor="middle" font-family="system-ui,sans-serif" font-size="32" font-weight="bold" fill="#94a3b8">${text}</text></svg>`)}`;
+
   const amazonLink = `https://www.amazon.com/dp/${product.asin || "B08N5M7S6K"}?tag=${affiliateTag}`;
   const imageSrc = imgError
-    ? `https://via.placeholder.com/800x800.png?text=${encodeURIComponent(product.brand || 'Product')}`
-    : (product.imageUrl || 'https://via.placeholder.com/800x800.png?text=Product');
+    ? generatePlaceholderSvg(product.brand || 'Product')
+    : (product.imageUrl || generatePlaceholderSvg('Product'));
 
   const bullets = useMemo(() => (product.evidenceClaims && product.evidenceClaims.length >= 3) ? product.evidenceClaims.slice(0, 4) : DEFAULT_BULLETS, [product.evidenceClaims]);
   const faqs = useMemo(() => (product.faqs && product.faqs.length >= 3) ? product.faqs.slice(0, 4) : DEFAULT_FAQS, [product.faqs]);
