@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 import { AppShell } from './shell/app-shell';
 import { useAppStore } from './stores/app-store';
 import { AppStep } from './types';
@@ -48,30 +49,57 @@ const App: React.FC = () => {
 
       <main className="flex-1 w-full h-full relative overflow-hidden">
         {currentStep === AppStep.SITEMAP && (
-          <SitemapScanner
-            onPostSelect={(post) => {
-              setSelectedPost(post);
-              setStep(AppStep.EDITOR);
-            }}
-            savedState={sitemap}
-            onStateChange={setSitemap}
-            config={config}
-          />
+          <ErrorBoundary
+            fallbackRender={({ error, resetErrorBoundary }) => (
+              <div className="flex items-center justify-center h-full p-8">
+                <div className="bg-dark-900 border border-red-500/30 rounded-2xl p-6 max-w-md text-center">
+                  <h2 className="text-lg font-bold text-white mb-2">Scanner Error</h2>
+                  <p className="text-gray-400 text-sm mb-4">{error.message}</p>
+                  <button onClick={resetErrorBoundary} className="bg-brand-500 text-white px-4 py-2 rounded-xl font-bold text-sm">Retry</button>
+                </div>
+              </div>
+            )}
+          >
+            <SitemapScanner
+              onPostSelect={(post) => {
+                setSelectedPost(post);
+                setStep(AppStep.EDITOR);
+              }}
+              savedState={sitemap}
+              onStateChange={setSitemap}
+              config={config}
+            />
+          </ErrorBoundary>
         )}
 
         {currentStep === AppStep.EDITOR && selectedPost && (
-          <Suspense fallback={<LoadingSpinner message="Loading Editor" />}>
-            <PostEditor
-              key={selectedPost.id}
-              post={selectedPost}
-              config={config}
-              onBack={() => {
-                setSelectedPost(null);
-                setStep(AppStep.SITEMAP);
-              }}
-              allPosts={sitemap.posts}
-            />
-          </Suspense>
+          <ErrorBoundary
+            fallbackRender={({ error, resetErrorBoundary }) => (
+              <div className="flex items-center justify-center h-full p-8">
+                <div className="bg-dark-900 border border-red-500/30 rounded-2xl p-6 max-w-md text-center">
+                  <h2 className="text-lg font-bold text-white mb-2">Editor Error</h2>
+                  <p className="text-gray-400 text-sm mb-2">{error.message}</p>
+                  <div className="flex gap-3 justify-center">
+                    <button onClick={() => { setSelectedPost(null); setStep(AppStep.SITEMAP); }} className="bg-dark-700 text-white px-4 py-2 rounded-xl font-bold text-sm">Back</button>
+                    <button onClick={resetErrorBoundary} className="bg-brand-500 text-white px-4 py-2 rounded-xl font-bold text-sm">Retry</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          >
+            <Suspense fallback={<LoadingSpinner message="Loading Editor" />}>
+              <PostEditor
+                key={selectedPost.id}
+                post={selectedPost}
+                config={config}
+                onBack={() => {
+                  setSelectedPost(null);
+                  setStep(AppStep.SITEMAP);
+                }}
+                allPosts={sitemap.posts}
+              />
+            </Suspense>
+          </ErrorBoundary>
         )}
       </main>
 

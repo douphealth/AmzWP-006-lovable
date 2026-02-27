@@ -218,25 +218,33 @@ export const SitemapScanner: React.FC<SitemapScannerProps> = ({
     const updatedPosts = [...posts];
     let completed = 0;
 
-    for (let i = 0; i < updatedPosts.length; i++) {
-      try {
-        const { content } = await fetchPageContent(config, updatedPosts[i].url);
-        const { priority, type, status: monetizationStatus } = calculatePostPriority(
-          updatedPosts[i].title,
-          content
-        );
-        
-        updatedPosts[i] = {
-          ...updatedPosts[i],
-          priority,
-          postType: type,
-          monetizationStatus,
-        };
-      } catch {}
-      
-      completed++;
-      setAuditProgress({ current: completed, total: posts.length });
-    }
+    // Concurrent processing with PQueue (5 workers)
+    const PQueue = (await import('p-queue')).default;
+    const queue = new PQueue({ concurrency: 5 });
+
+    await Promise.all(
+      updatedPosts.map((post, i) =>
+        queue.add(async () => {
+          try {
+            const { content } = await fetchPageContent(config, post.url);
+            const { priority, type, status: monetizationStatus } = calculatePostPriority(
+              post.title,
+              content
+            );
+            
+            updatedPosts[i] = {
+              ...updatedPosts[i],
+              priority,
+              postType: type,
+              monetizationStatus,
+            };
+          } catch {}
+          
+          completed++;
+          setAuditProgress({ current: completed, total: posts.length });
+        })
+      )
+    );
 
     setPosts(updatedPosts);
     setStatus('complete');

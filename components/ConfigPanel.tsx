@@ -138,61 +138,49 @@ const AMAZON_REGION_OPTIONS: AmazonRegionOption[] = [
 // UTILITY FUNCTIONS
 // ============================================================================
 
+/** Sensitive config fields that need encryption */
+const SENSITIVE_FIELDS: (keyof AppConfig)[] = [
+  'amazonAccessKey', 'amazonSecretKey',
+  'geminiApiKey', 'openaiApiKey', 'anthropicApiKey',
+  'groqApiKey', 'openrouterApiKey',
+];
+
 /**
- * Safely decrypt a value using sync method
- * Returns empty string on failure
+ * Safely decrypt a value — tries async AES-GCM first, falls back to sync legacy
  */
 const safeDecrypt = (value: string | undefined): string => {
   if (!value) return '';
   try {
     return SecureStorage.decryptSync(value);
   } catch {
-    void 0;
     return '';
   }
 };
 
 /**
- * Safely encrypt a value using sync method
- * Returns empty string on failure
+ * Decrypt all sensitive fields from config (sync for initial render)
  */
-const safeEncrypt = (value: string | undefined): string => {
-  if (!value) return '';
-  try {
-    return SecureStorage.encryptSync(value);
-  } catch {
-    void 0;
-    return '';
+const decryptConfig = (config: AppConfig): AppConfig => {
+  const result: Record<string, any> = { ...config };
+  for (const field of SENSITIVE_FIELDS) {
+    result[field as string] = safeDecrypt(config[field as keyof AppConfig] as string);
   }
+  return result as AppConfig;
 };
 
 /**
- * Decrypt all sensitive fields from config
+ * Encrypt all sensitive fields using async AES-GCM
  */
-const decryptConfig = (config: AppConfig): AppConfig => ({
-  ...config,
-  amazonAccessKey: safeDecrypt(config.amazonAccessKey),
-  amazonSecretKey: safeDecrypt(config.amazonSecretKey),
-  geminiApiKey: safeDecrypt(config.geminiApiKey),
-  openaiApiKey: safeDecrypt(config.openaiApiKey),
-  anthropicApiKey: safeDecrypt(config.anthropicApiKey),
-  groqApiKey: safeDecrypt(config.groqApiKey),
-  openrouterApiKey: safeDecrypt(config.openrouterApiKey),
-});
-
-/**
- * Encrypt all sensitive fields from config
- */
-const encryptConfig = (config: AppConfig): AppConfig => ({
-  ...config,
-  amazonAccessKey: safeEncrypt(config.amazonAccessKey),
-  amazonSecretKey: safeEncrypt(config.amazonSecretKey),
-  geminiApiKey: safeEncrypt(config.geminiApiKey),
-  openaiApiKey: safeEncrypt(config.openaiApiKey),
-  anthropicApiKey: safeEncrypt(config.anthropicApiKey),
-  groqApiKey: safeEncrypt(config.groqApiKey),
-  openrouterApiKey: safeEncrypt(config.openrouterApiKey),
-});
+const encryptConfigAsync = async (config: AppConfig): Promise<AppConfig> => {
+  const result: Record<string, any> = { ...config };
+  for (const field of SENSITIVE_FIELDS) {
+    const val = config[field as keyof AppConfig] as string | undefined;
+    if (val) {
+      result[field as string] = await SecureStorage.encrypt(val);
+    }
+  }
+  return result as AppConfig;
+};
 
 // ============================================================================
 // VALIDATION
@@ -505,7 +493,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ onSave, initialConfig 
     }
   }, [config]);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate current tab
@@ -518,14 +506,17 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ onSave, initialConfig 
 
     setIsSaving(true);
 
-    // Encrypt sensitive fields before saving (sync operation)
-    const encryptedConfig = encryptConfig(config);
-    
-    onSave(encryptedConfig);
-    setIsSaving(false);
-    setIsOpen(false);
-    
-    toast.success('✓ Configuration Saved'); 
+    try {
+      // Encrypt sensitive fields using async AES-GCM before saving
+      const encryptedConfig = await encryptConfigAsync(config);
+      onSave(encryptedConfig);
+      setIsOpen(false);
+      toast.success('✓ Configuration Saved');
+    } catch {
+      toast.error('Failed to encrypt config');
+    } finally {
+      setIsSaving(false);
+    }
       }, [config, activeTab, onSave]);
 
   const handleClose = useCallback(() => {

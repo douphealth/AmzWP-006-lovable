@@ -180,9 +180,12 @@ export const PremiumProductBox: React.FC<PremiumProductBoxProps> = ({
 
   const amazonLink = `https://www.amazon.com/dp/${product.asin}?tag=${affiliateTag}`;
 
+  const generatePlaceholderSvg = (text: string) =>
+    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><rect fill="#f1f5f9" width="600" height="600"/><text x="300" y="310" text-anchor="middle" font-family="system-ui,sans-serif" font-size="28" font-weight="bold" fill="#94a3b8">${text}</text></svg>`)}`;
+
   const imageSrc = useMemo(() => {
-    if (imgError) return `https://via.placeholder.com/600x600.png?text=${encodeURIComponent(product.brand || 'Product')}`;
-    return product.imageUrl || 'https://via.placeholder.com/600x600.png?text=Product';
+    if (imgError) return generatePlaceholderSvg(product.brand || 'Product');
+    return product.imageUrl || generatePlaceholderSvg('Product');
   }, [imgError, product.imageUrl, product.brand]);
 
   const verdict = useMemo(() => (product.verdict && product.verdict.length > 30 ? product.verdict : DEFAULT_VERDICT), [product.verdict]);
